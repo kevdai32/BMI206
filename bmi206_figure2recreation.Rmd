@@ -1,0 +1,194 @@
+---
+title: "bmi206_figure2recreation"
+output: html_document
+date: "2025-11-13"
+---
+
+```{r}
+library(readxl)
+library(tibble)
+library(ggplot2)
+library(reshape2)
+```
+
+```{r}
+file_to_adj_df <- function(file_path, model) {
+  adj_file = suppressMessages(read_excel(file_path, sheet=model))
+  adj_df = column_to_rownames(adj_file, "...1")
+  
+  return(adj_df)
+}
+```
+
+```{r}
+calculate_degrees <- function(adj_df) {
+  reactions = rownames(adj_df)
+
+  # initialize empty df
+  degree_df = data.frame(Reaction=character(0),
+                         in_degree=numeric(0),
+                         out_degree=numeric(0),
+                         total_degree=numeric(0)
+  )
+  
+  # calculating in-, out-, and total degree for each rxn node
+  for (rxn in reactions) {
+    in_deg = sum(adj_df[, rxn])
+    out_deg = sum(adj_df[rxn, ])
+    total_deg = in_deg + out_deg
+
+    degree_df = rbind(degree_df, 
+                      data.frame(Reaction = rxn,
+                          in_degree = in_deg,
+                          out_degree = out_deg,
+                          total_degree = total_deg)
+                      )
+  }
+  
+  return(degree_df)
+}
+```
+
+```{r}
+calculate_deg_probs <- function(deg_df) {
+  # initialize empty df
+  prob_df = data.frame(Degree=numeric(0),
+                     p_in_degree=numeric(0),
+                     p_out_degree=numeric(0),
+                     p_total_degree=numeric(0)
+                     )
+  
+  max_degree = max(deg_df[["total_degree"]])
+
+  for (i in 1:max_degree) {
+    p_in = sum(deg_df[["in_degree"]] == i)/length(deg_df[["in_degree"]])
+    p_out = sum(deg_df[["out_degree"]] == i)/length(deg_df[["out_degree"]])
+    p_tot = sum(deg_df[["total_degree"]] == i)/length(deg_df[["total_degree"]])
+  
+    prob_df = rbind(prob_df,
+                    data.frame(Degree=i,
+                      p_in_degree=p_in,
+                      p_out_degree=p_out,
+                      p_total_degree=p_tot)
+                    )
+  }
+
+  return(prob_df)
+}
+```
+
+```{r}
+calculate_gamma <- function(x, y) {
+  filt_zeros = y != 0
+  
+  log_x = log(x[filt_zeros])
+  log_y = log(y[filt_zeros])
+  
+  reg_line = lm(log_y~log_x)
+  gamma = reg_line$coefficients[[2]]
+  
+  return(gamma)
+}
+```
+
+```{r}
+plot_deg_probs <- function(prob_df, title_name, plot_palette) {
+  # Reshape the data to long format for ggplot
+  p_long <- melt(prob_df, id.vars = "Degree",
+                 variable.name = "Type",
+                 value.name = "Probability")
+  
+  deg_plot = ggplot(subset(p_long, Probability > 0), 
+                    aes(x = Degree, y = Probability, color=Type)) +
+      geom_point() +
+      labs(title = model,
+           x = "degree (k)",
+           y = "Pr(k)") +
+      theme_minimal() +
+      theme(legend.title = element_blank()) +
+      scale_x_log10(limits = c(1e0, 2e2),
+                    breaks = 10^(0:2),
+                    labels = scales::trans_format("log10", scales::math_format(10^.x))) +
+      scale_y_log10(limits = c(1e-4, 1e0),
+                    breaks = 10^(-4:0),
+                    labels = scales::trans_format("log10", scales::math_format(10^.x))) +
+      scale_color_manual(
+        values = c("p_in_degree" = plot_palette[1],
+                       "p_out_degree" = plot_palette[2],
+                       "p_total_degree" = plot_palette[3]),
+        labels = c("In-degree", "Out-degree", "Total degree")) +
+      geom_smooth(
+        aes(x = Degree, y = Probability, group = Type),
+        method = "lm",
+        formula = y ~ x,
+        se = FALSE,
+        linewidth = .5,
+        show.legend = FALSE
+      )
+  
+  # calculating gammas
+  gammas = c()
+  for (deg_type in colnames(prob_df)[2:4]) {
+    gamma = calculate_gamma(prob_df[["Degree"]],
+                            prob_df[[deg_type]])
+  
+    gammas = c(gammas, round(gamma, 2))
+  }
+  
+  # adding gammas to side of distribution plot
+  deg_plot <- deg_plot + 
+    annotate("text",
+             x = Inf, y = Inf,
+             label = paste0("gamma[i] == ", gammas[1]),
+             parse = TRUE,
+             hjust = -0.2, vjust = 1.2,
+             color = plot_palette[1]) +
+    annotate("text",
+             x = Inf, y = Inf,
+             label = paste0("gamma[o] == ", gammas[2]),
+             parse = TRUE,
+             hjust = -0.2, vjust = 1.2+1.5,
+             color = plot_palette[2]) +
+    annotate("text",
+             x = Inf, y = Inf,
+             label = paste0("gamma[tot] == ", gammas[3]),
+             parse = TRUE,
+             hjust = -0.2, vjust = 1.2+3,
+             color = plot_palette[3]) +
+    coord_cartesian(clip = "off")
+  
+  return(deg_plot)
+}
+```
+
+```{r}
+degree_distribution_plot <- function(model, file_path, palette) {
+  adj_df = file_to_adj_df(file_path, model)
+  deg_df = calculate_degrees(adj_df)
+  prob_df = calculate_deg_probs(deg_df)
+  plot = plot_deg_probs(prob_df, model, palette)
+  
+  return(plot)
+}
+```
+
+```{r}
+file_path = '/Users/fduong1/Documents/BMI 206/Group Project/12859_2019_2897_MOESM2_ESM.xlsx'
+
+models = c(
+  "E.coli (iJ01366)",
+  "B. subtilis (iYO844)",
+  "G. metallireducens (iAF987)",
+  "K. pneumoniae (iYL1228)",
+  "S. cerevisiae (iMM904)"
+)
+
+# plot_palette corresponds to colors for in-, out-, and total-degree, in that order
+plot_palette = c("red", "blue", "black")
+
+
+for (model in models) {
+  print(degree_distribution_plot(model, file_path, plot_palette))
+}
+
+```
