@@ -11,6 +11,8 @@ library(ggplot2)
 library(reshape2)
 ```
 
+# Helper Functions
+
 ```{r}
 file_to_adj_df <- function(file_path, model) {
   adj_file = suppressMessages(read_excel(file_path, sheet=model))
@@ -172,6 +174,8 @@ degree_distribution_plot <- function(model, file_path, palette) {
 }
 ```
 
+# Figure 2 Recreation
+
 ```{r}
 file_path = '/Users/fduong1/Documents/BMI 206/Group Project/12859_2019_2897_MOESM2_ESM.xlsx'
 
@@ -183,12 +187,90 @@ models = c(
   "S. cerevisiae (iMM904)"
 )
 
-# plot_palette corresponds to colors for in-, out-, and total-degree, in that order
-plot_palette = c("red", "blue", "black")
+# palette corresponds to colors for in-, out-, and total-degree, in that order
+palette = c("red", "blue", "black")
 
 
 for (model in models) {
-  print(degree_distribution_plot(model, file_path, plot_palette))
+  print(degree_distribution_plot(model, file_path, palette))
 }
 
+```
+
+# Sensitivity Analysis
+
+Preliminary Implementation
+
+There is prob a much more efficient way of implementing this. Also need to figure out a way to show statistical significance between actual gamma value and gamma distribution from permuted matrices.
+
+```{r}
+permute_adj_df <- function(original_df) {
+  rxns = rownames(test)
+  matrix_vals = unlist(original_df, use.names=FALSE)
+
+  permuted_vals = sample(matrix_vals, replace=FALSE)
+  permuted_df = as.data.frame(matrix(permuted_vals, nrow=length(rxns)))
+  
+  rownames(permuted_df) = rxns
+  colnames(permuted_df) = rxns
+  
+  return(permuted_df)
+}
+```
+
+```{r}
+# this function takes hella long at the moment
+
+
+permuted_gamma_dist <- function(original_df, degree_type, 
+                                num_permutes, fill_color="black", model_name=NULL) {
+  # calculating the real gamma values to plot against
+  deg_df = calculate_degrees(original_df)
+  prob_df = calculate_deg_probs(deg_df)
+  
+  # degree_type parameter indicates whether to calculate gammas for in, out, or total degrees
+  if (degree_type == "i") {col_name = colnames(prob_df)[2]}
+  else if (degree_type == "o") {col_name = colnames(prob_df)[3]}
+  else if (degree_type == "t") {col_name = colnames(prob_df)[4]}
+  
+  obs_gamma = calculate_gamma(prob_df[["Degree"]], prob_df[[col_name]])
+  
+  # gathering distribution of gammas from permutations of original adj matrix
+  permuted_gammas = c()
+  
+  for (i in 1:num_permutes) {
+    per_adj_df = permute_adj_df(original_df)
+    deg_df = calculate_degrees(per_adj_df)
+    prob_df = calculate_deg_probs(deg_df)
+    
+    per_gamma = calculate_gamma(prob_df[["Degree"]], prob_df[[col_name]])
+  
+    permuted_gammas = c(permuted_gammas, round(per_gamma, 2))
+    }
+
+  # generating histograms for permuted in-, out-, and total degrees
+  hist = ggplot(data.frame(values=permuted_gammas), aes(x=values)) +
+    geom_histogram(fill=fill_color) +
+      labs(x=expression(paste0("gamma[", degree_type, "]")),
+           y="Frequency",
+           title=model_name) +
+    geom_vline(xintercept=obs_gamma, color="green", linetype="dashed")
+  
+  
+  print(hist)
+  
+}
+```
+
+```{r}
+model = models[1]
+test = file_to_adj_df(file_path, model)
+
+perm_test_df = permute_adj_df(test)
+deg_df = calculate_degrees(perm_test_df)
+prob_df = calculate_deg_probs(deg_df)
+perm_plot = plot_deg_probs(prob_df, model, palette)
+print(perm_plot)
+
+permuted_gamma_dist(test, "i", num_permutes=15, fill_color=palette[1], model_name=model)
 ```
