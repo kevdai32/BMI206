@@ -103,7 +103,7 @@ plot_deg_probs <- function(prob_df, title_name, plot_palette) {
   deg_plot = ggplot(subset(p_long, Probability > 0), 
                     aes(x = Degree, y = Probability, color=Type)) +
       geom_point() +
-      labs(title = model,
+      labs(title = title_name,
            x = "degree (k)",
            y = "Pr(k)") +
       theme_minimal() +
@@ -203,6 +203,12 @@ Preliminary Implementation
 
 There is prob a much more efficient way of implementing this. Also need to figure out a way to show statistical significance between actual gamma value and gamma distribution from permuted matrices.
 
+**0. Each individual implementation of the method done by each of us team members were able to obtain the same figure, across different languages as well (e.g. Python, R).**
+
+**1. Permuting the edges in the adjacency matrix (keeping nodes and number of edges the same, just randomizing the connections)**
+
+Seemingly metabolic networks are *scale-free* networks. If we permute the adjacency matrix, we turn the graph into a random network, and we see that the power law trend for the degree distribution breaks down.
+
 ```{r}
 permute_adj_df <- function(original_df) {
   rxns = rownames(test)
@@ -220,7 +226,8 @@ permute_adj_df <- function(original_df) {
 
 ```{r}
 # this function takes hella long at the moment
-
+# also not sure it's relevant to recalculate permutations of gammas, since when we randomize
+# the network, the distribution of degrees should no longer follow the power law
 
 permuted_gamma_dist <- function(original_df, degree_type, 
                                 num_permutes, fill_color="black", model_name=NULL) {
@@ -272,5 +279,25 @@ prob_df = calculate_deg_probs(deg_df)
 perm_plot = plot_deg_probs(prob_df, model, palette)
 print(perm_plot)
 
-permuted_gamma_dist(test, "i", num_permutes=15, fill_color=palette[1], model_name=model)
+#permuted_gamma_dist(test, "i", num_permutes=15, fill_color=palette[1], model_name=model)
+```
+
+**2. Does distribution of degrees among all reaction networks combined follow the same power law trend?**
+
+```{r}
+combined_deg_df = data.frame(Reaction=character(0),
+                         in_degree=numeric(0),
+                         out_degree=numeric(0),
+                         total_degree=numeric(0)
+                         )
+
+for (model in models) {
+  adj_df = file_to_adj_df(file_path, model)
+  deg_df = calculate_degrees(adj_df)
+  combined_deg_df = rbind(combined_deg_df, deg_df)
+}
+
+combined_prob_df = calculate_deg_probs(combined_deg_df)
+
+print(plot_deg_probs(combined_prob_df, "All Models", palette))
 ```
